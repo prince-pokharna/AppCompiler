@@ -1,0 +1,17 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+{% for table in tables %}
+model {{ table.name | capitalize }} {
+  {% for col in table.columns %}
+  {{ col.name }}  {{ col.prisma_type }}{% if col.primary_key %} @id{% endif %}{% if col.unique %} @unique{% endif %}{% if col.default %} @default({{ col.default }}){% endif %}
+  {% endfor %}
+}
+
+{% endfor %}

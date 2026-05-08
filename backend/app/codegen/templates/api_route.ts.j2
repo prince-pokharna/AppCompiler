@@ -1,0 +1,43 @@
+import { NextResponse } from "next/server";
+
+{% for endpoint in endpoints %}
+{% if endpoint.method == "GET" %}
+export async function GET(request: Request) {
+  try {
+    // {{ endpoint.description }}
+    return NextResponse.json({ success: true, data: [], total: 0, page: 1, limit: 10 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: "Internal server error" }, { status: 500 });
+  }
+}
+{% elif endpoint.method == "POST" %}
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    // {{ endpoint.description }}
+    return NextResponse.json({ success: true, data: body }, { status: 201 });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: "Internal server error" }, { status: 500 });
+  }
+}
+{% elif endpoint.method == "PUT" %}
+export async function PUT(request: Request) {
+  try {
+    const body = await request.json();
+    // {{ endpoint.description }}
+    return NextResponse.json({ success: true, data: body });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: "Internal server error" }, { status: 500 });
+  }
+}
+{% elif endpoint.method == "DELETE" %}
+export async function DELETE(request: Request) {
+  try {
+    // {{ endpoint.description }}
+    return NextResponse.json({ success: true, message: "Deleted successfully" });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: "Internal server error" }, { status: 500 });
+  }
+}
+{% endif %}
+{% endfor %}

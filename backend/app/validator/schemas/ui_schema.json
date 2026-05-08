@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "UISchema",
+  "type": "object",
+  "required": ["pages"],
+  "properties": {
+    "pages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "route"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "route": { "type": "string", "pattern": "^/" },
+          "layout": { "type": "string" },
+          "auth_required": { "type": "boolean" },
+          "roles_allowed": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "type"],
+              "properties": {
+                "name": { "type": "string", "minLength": 1 },
+                "type": {
+                  "type": "string",
+                  "enum": ["form", "table", "card", "chart", "list", "modal", "nav", "sidebar", "hero", "stats", "tabs", "calendar", "kanban", "timeline"]
+                },
+                "props": {
+                  "type": "object",
+                  "additionalProperties": { "type": "string" }
+                },
+                "data_source": { "type": "string" },
+                "description": { "type": "string" }
+              }
+            }
+          },
+          "description": { "type": "string" }
+        }
+      },
+      "minItems": 1
+    },
+    "theme": { "type": "string" },
+    "navigation_type": {
+      "type": "string",
+      "enum": ["sidebar", "topnav", "both"]
+    }
+  },
+  "additionalProperties": false
+}

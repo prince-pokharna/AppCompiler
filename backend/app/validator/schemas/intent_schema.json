@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "IntentSchema",
+  "type": "object",
+  "required": ["app_name", "app_type", "description", "core_features", "entities", "roles", "auth_required", "payment_required", "analytics_required"],
+  "properties": {
+    "app_name": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z][A-Za-z0-9]*$"
+    },
+    "app_type": {
+      "type": "string",
+      "enum": ["crm", "ecommerce", "saas", "dashboard", "marketplace", "other"]
+    },
+    "description": {
+      "type": "string",
+      "minLength": 10
+    },
+    "core_features": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "entities": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "roles": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "auth_required": { "type": "boolean" },
+    "payment_required": { "type": "boolean" },
+    "analytics_required": { "type": "boolean" },
+    "assumptions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "clarifications_needed": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    }
+  },
+  "additionalProperties": false
+}
