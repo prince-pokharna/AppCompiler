@@ -1,0 +1,13 @@
+{
+  "app_name": "ContactManager",
+  "app_type": "crm",
+  "description": "A CRM application for managing contacts, deals, and sales pipeline with role-based access.",
+  "core_features": ["contact_management", "deal_tracking", "dashboard", "user_roles"],
+  "entities": ["User", "Contact", "Deal"],
+  "roles": ["admin", "sales"],
+  "auth_required": true,
+  "payment_required": false,
+  "analytics_required": true,
+  "assumptions": ["Default CRM workflow assumed"],
+  "clarifications_needed": []
+}

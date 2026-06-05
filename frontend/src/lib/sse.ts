@@ -1,8 +1,7 @@
 /** SSE stream handler with reconnection and event parsing. */
 
 import type { SSEEvent } from "@/types/schema";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { getStreamUrl } from "@/lib/api";
 
 interface SSEOptions {
   onEvent: (event: SSEEvent) => void;
@@ -13,7 +12,7 @@ interface SSEOptions {
 
 /**
  * Connect to an SSE stream for a job and process events.
- * Implements exponential backoff on disconnect.
+ * Uses the BFF proxy (/api/backend/...) so no API key is sent from the browser.
  */
 export function connectSSE(jobId: string, options: SSEOptions): () => void {
   const { onEvent, onError, onClose, maxRetries = 5 } = options;
@@ -25,7 +24,7 @@ export function connectSSE(jobId: string, options: SSEOptions): () => void {
     if (stopped) return;
 
     controller = new AbortController();
-    const url = `${API_BASE}/api/status/${jobId}/stream`;
+    const url = getStreamUrl(jobId);
 
     try {
       const response = await fetch(url, {
@@ -44,7 +43,7 @@ export function connectSSE(jobId: string, options: SSEOptions): () => void {
 
       const decoder = new TextDecoder();
       let buffer = "";
-      retryCount = 0; // Reset on successful connect
+      retryCount = 0;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -63,7 +62,6 @@ export function connectSSE(jobId: string, options: SSEOptions): () => void {
           } else if (line.startsWith("data:")) {
             currentData = line.slice(5).trim();
           } else if (line === "" && currentData) {
-            // End of event
             try {
               const parsedData = JSON.parse(currentData);
               const sseEvent: SSEEvent = {
@@ -72,13 +70,12 @@ export function connectSSE(jobId: string, options: SSEOptions): () => void {
               };
               onEvent(sseEvent);
 
-              // Terminal events
               if (currentEvent === "done" || currentEvent === "error") {
                 stopped = true;
                 onClose?.();
                 return;
               }
-            } catch (e) {
+            } catch {
               // Skip unparseable events
             }
             currentEvent = "";
@@ -105,7 +102,6 @@ export function connectSSE(jobId: string, options: SSEOptions): () => void {
 
   connect();
 
-  // Return disconnect function
   return () => {
     stopped = true;
     controller?.abort();

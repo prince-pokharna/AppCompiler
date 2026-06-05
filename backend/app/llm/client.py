@@ -1,4 +1,4 @@
-"""Anthropic Claude client wrapper with retry logic and structured logging."""
+"""OpenAI client wrapper with retry logic and structured logging."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 
-from anthropic import APIError, APITimeoutError, AsyncAnthropic, RateLimitError
+from openai import AsyncOpenAI, APIError, APITimeoutError, RateLimitError
 
 from app.config import get_settings
 
@@ -39,11 +39,11 @@ class LLMUsageAccumulator:
 
 
 class LLMClient:
-    """Async Anthropic client with retry, rate-limit handling, and logging."""
+    """Async OpenAI client with retry, rate-limit handling, and logging."""
 
     def __init__(self) -> None:
         settings = get_settings()
-        self._client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+        self._client = AsyncOpenAI(api_key=settings.openai_api_key)
         self._max_retries = settings.max_retries
         self._timeout = settings.llm_timeout
 
@@ -55,21 +55,7 @@ class LLMClient:
         temperature: float = 0.1,
         max_tokens: int = 4096,
     ) -> LLMResponse:
-        """Send a completion request to the Anthropic API.
-
-        Args:
-            system: System prompt.
-            user: User message content.
-            model: Model identifier (defaults to settings.default_model).
-            temperature: Sampling temperature.
-            max_tokens: Maximum output tokens.
-
-        Returns:
-            LLMResponse with content, token counts, and latency.
-
-        Raises:
-            APIError: If all retries are exhausted.
-        """
+        """Send a completion request to the OpenAI API."""
         settings = get_settings()
         model = model or settings.default_model
         retries = 0
@@ -78,24 +64,22 @@ class LLMClient:
         for attempt in range(self._max_retries + 1):
             start = time.perf_counter()
             try:
-                response = await self._client.messages.create(
+                response = await self._client.chat.completions.create(
                     model=model,
                     max_tokens=max_tokens,
                     temperature=temperature,
-                    system=system,
-                    messages=[{"role": "user", "content": user}],
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user}
+                    ],
                     timeout=self._timeout,
                 )
 
                 latency_ms = int((time.perf_counter() - start) * 1000)
 
-                content = ""
-                for block in response.content:
-                    if block.type == "text":
-                        content += block.text
-
-                input_tokens = response.usage.input_tokens
-                output_tokens = response.usage.output_tokens
+                content = response.choices[0].message.content or ""
+                input_tokens = response.usage.prompt_tokens if response.usage else 0
+                output_tokens = response.usage.completion_tokens if response.usage else 0
 
                 logger.info(
                     "LLM call completed",
@@ -144,21 +128,24 @@ class LLMClient:
             except APIError as e:
                 retries += 1
                 last_error = e
-                logger.error(
+                status_code = getattr(e, "status_code", None)
+                is_retryable = status_code is None or status_code >= 500
+                logger.warning(
                     "API error",
                     extra={
                         "attempt": attempt + 1,
-                        "status_code": getattr(e, "status_code", None),
                         "model": model,
+                        "status_code": status_code,
                         "error": str(e),
+                        "retryable": is_retryable,
                     },
                 )
-                if attempt < self._max_retries:
-                    await asyncio.sleep(2 ** attempt)
-                else:
-                    raise
+                if is_retryable and attempt < self._max_retries:
+                    await asyncio.sleep(min(2 ** attempt, 8))
+                    continue
+                raise
 
-        raise last_error or APIError("All retries exhausted")
+        raise last_error or RuntimeError("Max LLM retries exceeded")
 
     async def complete_with_retry_feedback(
         self,
@@ -169,11 +156,7 @@ class LLMClient:
         temperature: float = 0.1,
         max_tokens: int = 4096,
     ) -> LLMResponse:
-        """Complete with optional error feedback from a previous attempt.
-
-        If error_message is provided, it is appended to the user message
-        to guide the LLM to fix the issue.
-        """
+        """Complete with optional error feedback from a previous attempt."""
         if error_message:
             user = (
                 f"{user}\n\n"
@@ -192,8 +175,8 @@ class LLMClient:
     async def check_available(self) -> bool:
         """Check if the LLM API is accessible."""
         try:
-            await self._client.messages.create(
-                model="claude-haiku-3-5-20241022",
+            await self._client.chat.completions.create(
+                model="gpt-4o-mini",
                 max_tokens=10,
                 messages=[{"role": "user", "content": "ping"}],
             )

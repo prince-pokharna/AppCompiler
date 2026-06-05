@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.app_schema import CompletedAppSchema, GenerationMeta
 from app.schemas.pipeline_schemas import (
@@ -18,10 +18,27 @@ from app.schemas.pipeline_schemas import (
 # Generation
 # ──────────────────────────────────────────────
 
+_FORBIDDEN_PROMPT_FRAGMENTS = ("ignore previous", "system:", "assistant:")
+
+
 class GenerateRequest(BaseModel):
     """Request body for POST /api/generate."""
-    prompt: str = Field(..., min_length=3, max_length=5000, description="Natural language app description")
+    prompt: str = Field(
+        ...,
+        min_length=10,
+        max_length=2000,
+        description="Natural language app description",
+    )
     options: PipelineOptions = Field(default_factory=PipelineOptions)
+
+    @field_validator("prompt")
+    @classmethod
+    def validate_prompt_safety(cls, v: str) -> str:
+        lowered = v.lower()
+        for fragment in _FORBIDDEN_PROMPT_FRAGMENTS:
+            if fragment in lowered:
+                raise ValueError("Invalid prompt content")
+        return v.strip()
 
 
 class GenerateResponse(BaseModel):
@@ -40,22 +57,37 @@ class StatusResponse(BaseModel):
     status: JobStatus
     current_stage: str | None = None
     progress_pct: float = 0.0
-    result: CompletedAppSchema | None = None
+    app_schema: CompletedAppSchema | None = Field(default=None, alias="schema")
     code_result: CodeGenerationResult | None = None
     validation_report: ValidationReport | None = None
     error: str | None = None
+
+    class Config:
+        populate_by_name = True
 
 
 # ──────────────────────────────────────────────
 # Result
 # ──────────────────────────────────────────────
 
+class TokenUsage(BaseModel):
+    """Token and cost metrics for a completed job."""
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    estimated_cost_usd: float = 0.0
+    total_duration_ms: int = 0
+
+
 class ResultResponse(BaseModel):
     """Response body for GET /api/result/{job_id}."""
     job_id: str
-    schema: CompletedAppSchema
+    app_schema: CompletedAppSchema = Field(alias="schema")
     code_result: CodeGenerationResult | None = None
     validation_report: ValidationReport | None = None
+    token_usage: TokenUsage | None = None
+
+    class Config:
+        populate_by_name = True
 
 
 # ──────────────────────────────────────────────

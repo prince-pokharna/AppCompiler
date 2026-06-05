@@ -7,10 +7,10 @@ from dataclasses import dataclass, field
 
 logger = logging.getLogger("appcompiler.utils.cost_tracker")
 
-# Anthropic pricing per million tokens (as of 2025)
+# OpenAI pricing per million tokens (as of 2024)
 MODEL_PRICING: dict[str, dict[str, float]] = {
-    "claude-sonnet-4-20250514": {"input": 3.0, "output": 15.0},
-    "claude-haiku-3-5-20241022": {"input": 0.80, "output": 4.0},
+    "gpt-4o": {"input": 5.0, "output": 15.0},
+    "gpt-4o-mini": {"input": 0.15, "output": 0.60},
 }
 
 # Fallback pricing for unknown models
@@ -116,6 +116,12 @@ class CostTracker:
             "input": sum(u.input_tokens for u in self._stages.values()),
             "output": sum(u.output_tokens for u in self._stages.values()),
         }
+
+    def total_input_tokens(self) -> int:
+        return self.total_tokens()["input"]
+
+    def total_output_tokens(self) -> int:
+        return self.total_tokens()["output"]
 
     def summary(self) -> dict:
         """Get a complete cost summary."""

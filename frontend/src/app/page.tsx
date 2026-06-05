@@ -7,7 +7,7 @@ import SchemaViewer from "@/components/SchemaViewer";
 import ValidationReportView from "@/components/ValidationReport";
 import CodePreview from "@/components/CodePreview";
 import EvalDashboard from "@/components/EvalDashboard";
-import { generateApp, getJobResult, getDownloadUrl } from "@/lib/api";
+import { generateApp, getJobResult, downloadProjectZip } from "@/lib/api";
 import { connectSSE } from "@/lib/sse";
 import type {
   SSEEvent,
@@ -106,7 +106,7 @@ export default function HomePage() {
   const handleDownloadJson = useCallback(
     (layer: string) => {
       if (!schema) return;
-      const data = (schema as Record<string, unknown>)[layer];
+      const data = (schema as unknown as Record<string, unknown>)[layer];
       if (!data) return;
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -119,10 +119,14 @@ export default function HomePage() {
     [schema],
   );
 
-  const handleDownloadZip = useCallback(() => {
-    if (!jobId) return;
-    window.open(getDownloadUrl(jobId), "_blank");
-  }, [jobId]);
+  const handleDownloadZip = useCallback(async () => {
+    if (!jobId || !schema) return;
+    try {
+      await downloadProjectZip(jobId, `${schema.meta.app_name}.zip`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Download failed");
+    }
+  }, [jobId, schema]);
 
   return (
     <div className="min-h-screen gradient-mesh">

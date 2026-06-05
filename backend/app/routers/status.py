@@ -5,19 +5,18 @@ from __future__ import annotations
 import asyncio
 import io
 import json
-import logging
 import zipfile
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sse_starlette.sse import EventSourceResponse
 
-from app.redis_client import get_event_log, get_job_state
-from app.schemas.api_models import ResultResponse, StatusResponse
+from app.deps import verify_token
+from app.redis_client import get_event_log
+from app.schemas.api_models import ResultResponse, StatusResponse, TokenUsage
 from app.schemas.app_schema import CompletedAppSchema
 from app.schemas.pipeline_schemas import CodeGenerationResult, JobStatus, ValidationReport
-
-logger = logging.getLogger("appcompiler.routers.status")
+from app.services import job_service
 
 router = APIRouter(prefix="/api", tags=["status"])
 
@@ -27,9 +26,12 @@ router = APIRouter(prefix="/api", tags=["status"])
     response_model=StatusResponse,
     status_code=status.HTTP_200_OK,
 )
-async def get_status(job_id: str) -> StatusResponse:
+async def get_status(
+    job_id: str,
+    _token: str = Depends(verify_token),
+) -> StatusResponse:
     """Get the current status of a generation job."""
-    state = await get_job_state(job_id)
+    state = await job_service.get_job_state_merged(job_id)
     if state is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -46,10 +48,12 @@ async def get_status(job_id: str) -> StatusResponse:
 
 
 @router.get("/status/{job_id}/stream")
-async def stream_status(job_id: str) -> EventSourceResponse:
+async def stream_status(
+    job_id: str,
+    _token: str = Depends(verify_token),
+) -> EventSourceResponse:
     """SSE stream of pipeline progress events."""
-    state = await get_job_state(job_id)
-    if state is None:
+    if not await job_service.job_exists(job_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Job {job_id} not found",
@@ -57,9 +61,9 @@ async def stream_status(job_id: str) -> EventSourceResponse:
 
     async def event_generator():
         last_index = 0
-        max_wait = 300  # 5 minutes max
+        max_wait = 300
 
-        for _ in range(max_wait * 2):  # Check every 0.5s
+        for _ in range(max_wait * 2):
             events = await get_event_log(job_id)
 
             for i in range(last_index, len(events)):
@@ -70,7 +74,6 @@ async def stream_status(job_id: str) -> EventSourceResponse:
                 }
                 last_index = i + 1
 
-                # If we got a terminal event, stop
                 if event.get("event") in ("done", "error"):
                     return
 
@@ -84,9 +87,12 @@ async def stream_status(job_id: str) -> EventSourceResponse:
     response_model=ResultResponse,
     status_code=status.HTTP_200_OK,
 )
-async def get_result(job_id: str) -> ResultResponse:
+async def get_result(
+    job_id: str,
+    _token: str = Depends(verify_token),
+) -> ResultResponse:
     """Get the full result of a completed generation job."""
-    state = await get_job_state(job_id)
+    state = await job_service.get_job_state_merged(job_id)
     if state is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -115,18 +121,29 @@ async def get_result(job_id: str) -> ResultResponse:
     if state.get("validation_report"):
         validation_report = ValidationReport(**state["validation_report"])
 
+    token_usage = TokenUsage(
+        total_input_tokens=state.get("total_input_tokens", 0),
+        total_output_tokens=state.get("total_output_tokens", 0),
+        estimated_cost_usd=state.get("estimated_cost_usd", 0.0),
+        total_duration_ms=state.get("total_duration_ms", 0),
+    )
+
     return ResultResponse(
         job_id=job_id,
         schema=schema,
         code_result=code_result,
         validation_report=validation_report,
+        token_usage=token_usage,
     )
 
 
 @router.get("/result/{job_id}/download")
-async def download_result(job_id: str) -> StreamingResponse:
+async def download_result(
+    job_id: str,
+    _token: str = Depends(verify_token),
+) -> StreamingResponse:
     """Download the generated Next.js project as a ZIP file."""
-    state = await get_job_state(job_id)
+    state = await job_service.get_job_state_merged(job_id)
     if state is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -153,11 +170,9 @@ async def download_result(job_id: str) -> StreamingResponse:
             detail="No files were generated",
         )
 
-    # Get app name for the ZIP
     result_data = state.get("result", {})
     app_name = result_data.get("meta", {}).get("app_name", "generated-app")
 
-    # Create in-memory ZIP
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         for file_entry in generated_files:

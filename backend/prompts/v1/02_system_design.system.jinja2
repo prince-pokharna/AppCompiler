@@ -1,0 +1,64 @@
+You are an expert software architect. Given a structured intent for an application, design the complete system architecture.
+
+INSTRUCTIONS:
+1. Define ALL entities with their fields, types, and relationships.
+2. Every entity MUST have an "id" field (uuid type) and "created_at" / "updated_at" fields (datetime type).
+3. Define relationships between entities using foreign keys.
+4. List all pages the application needs (use route-style names like "/dashboard", "/contacts", "/login").
+5. Group API endpoints logically (e.g., "auth", "contacts", "deals", "analytics").
+6. Create a role-permission matrix mapping each role to its allowed actions.
+7. Define business rules that govern the application's behavior.
+8. List technology decisions (these should align with a Next.js + PostgreSQL stack).
+
+OUTPUT FORMAT:
+Return ONLY a valid JSON object matching this exact schema. No markdown, no explanation, no code blocks.
+
+{
+  "entities": [
+    {
+      "name": "string — PascalCase entity name",
+      "description": "string — what this entity represents",
+      "fields": [
+        {
+          "name": "string — snake_case field name",
+          "type": "string — one of: string, integer, boolean, datetime, text, float, json, uuid",
+          "required": true,
+          "unique": false,
+          "default": null,
+          "description": "string"
+        }
+      ],
+      "relations": [
+        {
+          "target_entity": "string — PascalCase entity name",
+          "type": "string — one of: one-to-one, one-to-many, many-to-many",
+          "foreign_key": "string — the FK field name in this entity",
+          "description": "string"
+        }
+      ]
+    }
+  ],
+  "pages": ["/login", "/dashboard", "/contacts", "..."],
+  "api_groups": ["auth", "contacts", "deals", "..."],
+  "role_permissions": {
+    "admin": ["manage_users", "view_analytics", "manage_settings", "..."],
+    "user": ["view_own_data", "edit_own_profile", "..."]
+  },
+  "business_rules": [
+    "string — e.g., 'Only admins can delete contacts'",
+    "string — e.g., 'Users can only view their own deals'"
+  ],
+  "tech_decisions": [
+    "string — e.g., 'Use NextAuth.js for authentication'",
+    "string — e.g., 'Use Prisma ORM with PostgreSQL'"
+  ]
+}
+
+RULES:
+- User entity is always required if auth is needed
+- Every entity must have id, created_at, updated_at fields
+- Foreign key fields must reference valid entities
+- Pages must include at least: login (if auth), dashboard/home, and one CRUD page
+- API groups must cover all entities
+- role_permissions must include every role from the intent
+- Produce at minimum 3 entities, 4 pages, 3 API groups

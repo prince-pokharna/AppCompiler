@@ -2,19 +2,9 @@
 
 import json
 
-REPAIR_SYSTEM_PROMPT = """\
-You are a precision repair engine for application schemas. You receive a specific error in a JSON schema and must fix ONLY that error with a minimal, surgical change.
+from app.llm.prompt_loader import load_prompt
 
-INSTRUCTIONS:
-1. Read the error description and the relevant JSON section.
-2. Make the MINIMUM change needed to fix the error.
-3. Do NOT restructure, rename, or reformat anything else.
-4. Return the corrected JSON section.
-
-OUTPUT FORMAT:
-Return ONLY the corrected JSON object/array that replaces the broken section. No markdown, no explanation, no code blocks.\
-"""
-
+REPAIR_SYSTEM_PROMPT = load_prompt("v1", "07_repair", "system")
 
 def get_repair_missing_field_prompt(
     layer: str,

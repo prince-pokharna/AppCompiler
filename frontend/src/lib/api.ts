@@ -1,4 +1,4 @@
-/** API client for communicating with the backend. */
+/** API client — uses same-origin BFF proxy by default (no API key in browser). */
 
 import type {
   GenerateResponse,
@@ -10,7 +10,11 @@ import type {
   EvaluationSummary,
 } from "@/types/schema";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+/** Proxy mode: requests go to /api/backend/* (server adds Bearer token). */
+const USE_PROXY = process.env.NEXT_PUBLIC_USE_API_PROXY !== "false";
+
+const DIRECT_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "";
 
 class APIError extends Error {
   constructor(
@@ -22,16 +26,33 @@ class APIError extends Error {
   }
 }
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const url = `${API_BASE}${path}`;
-  const res = await fetch(url, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
+function apiUrl(endpoint: string): string {
+  if (USE_PROXY) {
+    return `/api/backend/${endpoint}`;
+  }
+  return `${DIRECT_BASE}/api/${endpoint}`;
+}
+
+function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (!USE_PROXY && API_KEY) {
+    headers.Authorization = `Bearer ${API_KEY}`;
+  }
+  return headers;
+}
+
+async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(apiUrl(endpoint), {
+    headers: { ...authHeaders(), ...options?.headers },
     ...options,
   });
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new APIError(res.status, body.detail || "Request failed");
+    const detail = body.detail || body.error || "Request failed";
+    throw new APIError(res.status, typeof detail === "string" ? detail : JSON.stringify(detail));
   }
 
   return res.json();
@@ -42,7 +63,7 @@ export async function generateApp(
   prompt: string,
   options?: { skip_codegen?: boolean; fast_mode?: boolean },
 ): Promise<GenerateResponse> {
-  return request<GenerateResponse>("/api/generate", {
+  return request<GenerateResponse>("generate", {
     method: "POST",
     body: JSON.stringify({ prompt, options }),
   });
@@ -50,7 +71,7 @@ export async function generateApp(
 
 /** Get the current status of a job. */
 export async function getJobStatus(jobId: string): Promise<StatusResponse> {
-  return request<StatusResponse>(`/api/status/${jobId}`);
+  return request<StatusResponse>(`status/${jobId}`);
 }
 
 /** Get the full result of a completed job. */
@@ -59,13 +80,40 @@ export async function getJobResult(jobId: string): Promise<{
   schema: CompletedAppSchema;
   code_result: CodeGenerationResult | null;
   validation_report: ValidationReport | null;
+  token_usage?: {
+    total_input_tokens: number;
+    total_output_tokens: number;
+    estimated_cost_usd: number;
+    total_duration_ms: number;
+  };
 }> {
-  return request(`/api/result/${jobId}`);
+  return request(`result/${jobId}`);
 }
 
-/** Get the download URL for a generated project ZIP. */
-export function getDownloadUrl(jobId: string): string {
-  return `${API_BASE}/api/result/${jobId}/download`;
+/** Download generated project ZIP. */
+export async function downloadProjectZip(
+  jobId: string,
+  filename = "generated-app.zip",
+): Promise<void> {
+  const res = await fetch(apiUrl(`result/${jobId}/download`), {
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new APIError(res.status, body.detail || "Download failed");
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/** SSE stream URL for a job (same-origin proxy). */
+export function getStreamUrl(jobId: string): string {
+  return apiUrl(`status/${jobId}/stream`);
 }
 
 /** Start an evaluation run. */
@@ -74,7 +122,7 @@ export async function startEvaluation(promptIds?: string[]): Promise<{
   status: string;
   total_prompts: number;
 }> {
-  return request("/api/evaluate", {
+  return request("evaluate", {
     method: "POST",
     body: JSON.stringify({ prompt_ids: promptIds || [] }),
   });
@@ -87,7 +135,7 @@ export async function getEvaluationResults(evalId: string): Promise<{
   results: PromptResult[];
   summary: EvaluationSummary | null;
 }> {
-  return request(`/api/evaluate/${evalId}/results`);
+  return request(`evaluate/${evalId}/results`);
 }
 
 /** Health check. */
@@ -97,7 +145,7 @@ export async function checkHealth(): Promise<{
   uptime_seconds: number;
   llm_available: boolean;
 }> {
-  return request("/api/health");
+  return request("health");
 }
 
-export { APIError };
+export { APIError, USE_PROXY };

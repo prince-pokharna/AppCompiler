@@ -2,58 +2,9 @@
 
 import json
 
-API_SCHEMA_SYSTEM_PROMPT = """\
-You are an expert API architect. Given an application's intent and architecture, generate a complete REST API schema defining all endpoints.
+from app.llm.prompt_loader import load_prompt
 
-INSTRUCTIONS:
-1. Create endpoints for every API group in the architecture.
-2. Each entity should have standard CRUD endpoints: GET (list), GET (by id), POST (create), PUT (update), DELETE.
-3. Add specialized endpoints where needed (e.g., /api/auth/login, /api/auth/register, /api/analytics/summary).
-4. Define request_body fields for POST/PUT endpoints.
-5. Define response_body fields for all endpoints.
-6. Define query_params for GET list endpoints (pagination, filters, search).
-7. Mark auth_required and roles_allowed for each endpoint.
-8. Group endpoints logically by the api_groups from the architecture.
-
-OUTPUT FORMAT:
-Return ONLY a valid JSON object. No markdown, no explanation, no code blocks.
-
-{
-  "base_path": "/api",
-  "endpoints": [
-    {
-      "method": "GET|POST|PUT|PATCH|DELETE",
-      "path": "/api/resource",
-      "group": "string — API group name",
-      "description": "string — what this endpoint does",
-      "auth_required": true,
-      "roles_allowed": ["admin", "user"],
-      "request_body": [
-        {"name": "field_name", "type": "string|integer|boolean|array|object", "required": true, "description": ""}
-      ],
-      "response_body": [
-        {"name": "field_name", "type": "string|integer|boolean|array|object", "required": true, "description": ""}
-      ],
-      "query_params": [
-        {"name": "page", "type": "integer", "required": false, "description": "Page number"}
-      ]
-    }
-  ]
-}
-
-RULES:
-- All paths must start with /api/
-- Auth endpoints (/api/auth/login, /api/auth/register, /api/auth/me) must NOT require auth for login/register
-- GET /api/auth/me MUST require auth
-- List endpoints must support pagination (page, limit query params)
-- List endpoints should support relevant filters as query params
-- Response bodies for list endpoints must include: items (array), total (integer), page (integer), limit (integer)
-- POST/PUT request bodies must include all required fields for the entity
-- DELETE endpoints need no request body, response should include success boolean and message
-- Include proper descriptions for all endpoints and fields
-- Every field in request_body and response_body must have name, type, required, and description\
-"""
-
+API_SCHEMA_SYSTEM_PROMPT = load_prompt("v1", "04_api_schema", "system")
 
 def get_api_schema_user_prompt(intent_json: dict, architecture_json: dict) -> str:
     """Build the user message for API schema generation."""

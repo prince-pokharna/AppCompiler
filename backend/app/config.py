@@ -11,11 +11,12 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",
     )
 
     # Required
-    anthropic_api_key: str
-    database_url: str
+    openai_api_key: str
+    database_url: str = ""
     redis_url: str = "redis://localhost:6379"
     secret_key: str = "default-dev-secret-key-change-in-production"
 
@@ -25,15 +26,20 @@ class Settings(BaseSettings):
     app_version: str = "1.0.0"
     debug: bool = False
 
-    # LLM defaults
-    default_model: str = "claude-sonnet-4-20250514"
-    fast_model: str = "claude-haiku-3-5-20241022"
+    # LLM Settings
+    default_model: str = "gpt-4o"
+    fast_model: str = "gpt-4o-mini"
     max_retries: int = 3
-    llm_timeout: int = 120
+    llm_timeout: int = 60
 
     # Pipeline
     max_repair_attempts: int = 2
     max_concurrent_jobs: int = 5
+    pipeline_timeout_seconds: int = 600
+    pipeline_stage_timeout_seconds: int = 90
+
+    # API auth (also reads API_SECRET_KEY env var in deps.py)
+    api_secret_key: str | None = None
 
     # CORS
     cors_origins: list[str] = [

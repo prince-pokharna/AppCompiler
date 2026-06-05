@@ -1,56 +1,73 @@
-"""Async SQLAlchemy engine and session factory."""
-
-from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
+import os
+import logging
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy import text
 
-from app.config import get_settings
+logger = logging.getLogger("appcompiler")
 
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+
+# Auto-convert postgres:// → postgresql+asyncpg:// and
+# postgresql:// → postgresql+asyncpg://
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
+elif DATABASE_URL.startswith("postgresql://") and "+asyncpg" not in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+# Fallback to SQLite for local development when no DATABASE_URL is set
+if not DATABASE_URL:
+    logger.warning("DATABASE_URL not set — falling back to local SQLite (dev only)")
+    DATABASE_URL = "sqlite+aiosqlite:///./appforge_dev.db"
+
+# Engine config differs between PostgreSQL and SQLite
+if "sqlite" in DATABASE_URL:
+    engine = create_async_engine(
+        DATABASE_URL,
+        echo=False,
+        connect_args={"check_same_thread": False},
+    )
+else:
+    engine = create_async_engine(
+        DATABASE_URL,
+        echo=False,
+        pool_size=5,
+        max_overflow=10,
+        pool_pre_ping=True,       # detect stale connections
+        pool_recycle=1800,
+    )
+
+AsyncSessionLocal = async_sessionmaker(
+    bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
 
 class Base(DeclarativeBase):
-    """SQLAlchemy declarative base for all ORM models."""
     pass
 
+async def init_db() -> None:
+    """Create all tables. Raises a clear error if the DB is unreachable."""
+    # Register ORM models before create_all
+    import app.models  # noqa: F401
 
-_engine: AsyncEngine | None = None
-_session_factory: async_sessionmaker[AsyncSession] | None = None
-
-
-def get_engine() -> AsyncEngine:
-    """Get or create the async engine singleton."""
-    global _engine
-    if _engine is None:
-        settings = get_settings()
-        _engine = create_async_engine(
-            settings.database_url,
-            echo=settings.debug,
-            pool_size=20,
-            max_overflow=10,
-            pool_pre_ping=True,
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            # Verify connection is live
+            await conn.execute(text("SELECT 1"))
+        logger.info(f"Database connected: {DATABASE_URL.split('@')[-1]}")
+    except Exception as exc:
+        logger.error(
+            f"Cannot connect to database.\n"
+            f"  URL used: {DATABASE_URL}\n"
+            f"  Error: {exc}\n"
+            f"  Fix: ensure PostgreSQL is running on port 5432, or set DATABASE_URL in .env"
         )
-    return _engine
+        raise
 
-
-def get_session_factory() -> async_sessionmaker[AsyncSession]:
-    """Get or create the session factory singleton."""
-    global _session_factory
-    if _session_factory is None:
-        _session_factory = async_sessionmaker(
-            bind=get_engine(),
-            class_=AsyncSession,
-            expire_on_commit=False,
-        )
-    return _session_factory
-
-
-async def get_db() -> AsyncSession:  # type: ignore[misc]
-    """FastAPI dependency that yields an async database session."""
-    factory = get_session_factory()
-    async with factory() as session:
+async def get_db():
+    async with AsyncSessionLocal() as session:
         try:
             yield session
             await session.commit()
@@ -59,19 +76,3 @@ async def get_db() -> AsyncSession:  # type: ignore[misc]
             raise
         finally:
             await session.close()
-
-
-async def init_db() -> None:
-    """Create all tables (development only)."""
-    engine = get_engine()
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-
-async def close_db() -> None:
-    """Dispose of the engine connection pool."""
-    global _engine, _session_factory
-    if _engine is not None:
-        await _engine.dispose()
-        _engine = None
-        _session_factory = None

@@ -1,16 +1,15 @@
-"""Health router — GET /api/health."""
+"""Health router — GET /api/health (unauthenticated)."""
 
 from __future__ import annotations
 
-import logging
 import time
 
 from fastapi import APIRouter, status
+from sqlalchemy import text
 
 from app.config import get_settings
+from app.database import engine
 from app.schemas.api_models import HealthResponse
-
-logger = logging.getLogger("appcompiler.routers.health")
 
 router = APIRouter(prefix="/api", tags=["health"])
 
@@ -23,35 +22,28 @@ _start_time = time.time()
     status_code=status.HTTP_200_OK,
 )
 async def health_check() -> HealthResponse:
-    """Health check endpoint."""
+    """Health check endpoint — no authentication required."""
     settings = get_settings()
     uptime = time.time() - _start_time
 
-    # Check database
     db_ok = False
     try:
-        from app.database import get_engine
-        engine = get_engine()
         async with engine.connect() as conn:
-            await conn.execute(
-                __import__("sqlalchemy").text("SELECT 1")
-            )
+            await conn.execute(text("SELECT 1"))
             db_ok = True
-    except Exception as e:
-        logger.warning(f"Database health check failed: {e}")
+    except Exception:
+        pass
 
-    # Check Redis
     redis_ok = False
     try:
         from app.redis_client import get_redis
         r = await get_redis()
         await r.ping()
         redis_ok = True
-    except Exception as e:
-        logger.warning(f"Redis health check failed: {e}")
+    except Exception:
+        pass
 
-    # Check LLM
-    llm_ok = bool(settings.anthropic_api_key and settings.anthropic_api_key.startswith("sk-"))
+    llm_ok = bool(settings.openai_api_key and settings.openai_api_key.startswith("sk-"))
 
     return HealthResponse(
         status="ok" if (db_ok and redis_ok) else "degraded",

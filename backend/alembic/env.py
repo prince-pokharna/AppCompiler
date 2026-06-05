@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from app.env_loader import load_app_env
+
+load_app_env()
+
 import asyncio
 from logging.config import fileConfig
 

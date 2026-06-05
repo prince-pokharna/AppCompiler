@@ -1,5 +1,6 @@
 """Async Redis client for caching and job state management."""
 
+import asyncio
 import json
 from typing import Any
 
@@ -11,16 +12,29 @@ _redis_pool: aioredis.Redis | None = None
 
 
 async def get_redis() -> aioredis.Redis:
-    """Get or create the Redis connection pool singleton."""
+    """Get or create the Redis connection pool singleton, falling back to FakeRedis if unreachable."""
     global _redis_pool
     if _redis_pool is None:
         settings = get_settings()
-        _redis_pool = aioredis.from_url(
-            settings.redis_url,
-            encoding="utf-8",
-            decode_responses=True,
-            max_connections=20,
-        )
+        try:
+            client = aioredis.from_url(
+                settings.redis_url,
+                encoding="utf-8",
+                decode_responses=True,
+                max_connections=20,
+            )
+            # Try a quick ping with a short timeout to check connection
+            await asyncio.wait_for(client.ping(), timeout=2.0)
+            _redis_pool = client
+        except Exception as exc:
+            import logging
+            logger = logging.getLogger("appcompiler.redis")
+            logger.warning(
+                f"Failed to connect to Redis at {settings.redis_url} ({exc}). "
+                "Falling back to in-memory FakeRedis."
+            )
+            import fakeredis.aioredis
+            _redis_pool = fakeredis.aioredis.FakeRedis(decode_responses=True)
     return _redis_pool
 
 

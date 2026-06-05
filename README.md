@@ -21,34 +21,51 @@ AppCompiler operates like a compiler with 6 stages:
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | Next.js 14 (App Router), TypeScript, Tailwind CSS, shadcn/ui |
+| Frontend | Next.js 14 (App Router), TypeScript, Tailwind CSS |
 | Backend | Python FastAPI (async) |
-| LLM | Anthropic Claude (claude-sonnet-4-20250514 / claude-haiku-3-5-20241022) |
-| Database | PostgreSQL (SQLAlchemy async + Alembic) |
-| Cache/Queue | Redis (aioredis) |
-| Validation | Pydantic v2 (backend), Zod (frontend), jsonschema |
+| LLM | OpenAI (`gpt-4o` / `gpt-4o-mini`) |
+| Database | PostgreSQL (SQLAlchemy async + Alembic) — job persistence |
+| Cache/Events | Redis (job cache, SSE event log, rate limits) |
+| Validation | Pydantic v2 (backend), jsonschema |
+| Prompts | Versioned Jinja2 templates (`backend/prompts/v1/`) |
+
+## Security
+
+All `/api/*` endpoints except `/api/health` require a Bearer token:
+
+```bash
+Authorization: Bearer <API_SECRET_KEY>
+```
+
+Set `API_SECRET_KEY` in `.env` (backend) and `NEXT_PUBLIC_API_KEY` in `.env` (frontend) to the same value.
+
+## Trial (fastest path)
+
+See **[TRIAL.md](TRIAL.md)** for step-by-step local trial instructions.
+
+```powershell
+.\setup.ps1    # once
+.\start.ps1     # each session
+```
 
 ## Quick Start
 
 ### Prerequisites
 
 - Docker & Docker Compose
-- Anthropic API key
+- OpenAI API key
 
 ### Setup
 
 ```bash
-# Clone the repo
-git clone <repo-url> && cd appcompiler
+git clone https://github.com/prince-pokharna/AppCompiler-.git
+cd AppCompiler-
 
-# Set environment variables
 cp .env.example .env
-# Edit .env and add your ANTHROPIC_API_KEY
+# Edit .env: OPENAI_API_KEY, API_SECRET_KEY, NEXT_PUBLIC_API_KEY
 
-# Start all services
 docker-compose up --build
 
-# Access the app
 # Frontend: http://localhost:3000
 # Backend API: http://localhost:8000
 # API Docs: http://localhost:8000/docs
@@ -59,7 +76,8 @@ docker-compose up --build
 ```bash
 # Backend
 cd backend
-python -m venv venv && source venv/bin/activate  # or venv\Scripts\activate on Windows
+python -m venv venv
+# Windows: venv\Scripts\activate
 pip install -r requirements.txt
 alembic upgrade head
 uvicorn app.main:app --reload --port 8000
@@ -72,43 +90,37 @@ npm run dev
 
 ## API Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/generate` | Start a generation job |
-| GET | `/api/status/{job_id}` | Get job status |
-| GET | `/api/status/{job_id}/stream` | SSE stream of pipeline progress |
-| GET | `/api/result/{job_id}` | Get full schema result |
-| GET | `/api/result/{job_id}/download` | Download generated project as ZIP |
-| POST | `/api/evaluate` | Run evaluation suite |
-| GET | `/api/evaluate/{eval_id}/results` | Get evaluation results |
-| GET | `/api/health` | Health check |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/api/generate` | Yes | Start a generation job |
+| GET | `/api/status/{job_id}` | Yes | Get job status |
+| GET | `/api/status/{job_id}/stream` | Yes | SSE pipeline progress |
+| GET | `/api/result/{job_id}` | Yes | Full result + token usage |
+| GET | `/api/result/{job_id}/download` | Yes | Download ZIP |
+| POST | `/api/evaluate` | Yes | Run evaluation suite |
+| GET | `/api/evaluate/{eval_id}/results` | Yes | Evaluation results |
+| GET | `/api/health` | No | Health check |
 
 ## Example Usage
 
 ```bash
 curl -X POST http://localhost:8000/api/generate \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "Build a CRM with login, contacts, dashboard, role-based access, and premium plan with payments"}'
+  -H "Authorization: Bearer $API_SECRET_KEY" \
+  -d '{"prompt": "Build a CRM with login, contacts, dashboard, and role-based access"}'
 ```
 
-## Evaluation Suite
-
-AppCompiler includes 20 test prompts (10 real-world + 10 edge cases) for systematic evaluation:
+## Testing
 
 ```bash
-# Run all 20 test prompts
-curl -X POST http://localhost:8000/api/evaluate
-
-# Run specific prompts
-curl -X POST http://localhost:8000/api/evaluate \
-  -H "Content-Type: application/json" \
-  -d '{"prompt_ids": ["prompt_1", "prompt_3"]}'
+cd backend
+pytest tests/ --cov=app --cov-report=term-missing
 ```
 
 ## Modes
 
-- **Quality Mode** (default): Uses Claude Sonnet for all stages, full validation, TypeScript compile check
-- **Fast Mode**: Uses Claude Haiku for early stages, skips refinement if clean, ~40% cheaper
+- **Quality Mode** (default): `gpt-4o` for LLM stages, full validation
+- **Fast Mode**: `gpt-4o-mini` for early stages, skips refinement when clean
 
 ## License
 
